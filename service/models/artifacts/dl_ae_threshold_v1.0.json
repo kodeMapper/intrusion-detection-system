@@ -1,0 +1,89 @@
+{
+    "E_thresh": 0.6034096906428857,
+    "method": "balanced_f1_optimizer",
+    "model_type": "TemporalOneClassVAE",
+    "model_hparams": {
+        "input_size": 198,
+        "seq_len": 10,
+        "d_model": 128,
+        "latent_dim": 16,
+        "n_heads": 4,
+        "num_layers": 2,
+        "dim_feedforward": 256,
+        "decoder_hidden": 256,
+        "decoder_layers": 2,
+        "dropout": 0.1,
+        "lr": 0.0005,
+        "weight_decay": 0.0001,
+        "beta_max": 0.02,
+        "kl_warmup_epochs": 20,
+        "center_loss_weight": 0.2,
+        "score_weights": [
+            0.1,
+            0.6,
+            0.3
+        ]
+    },
+    "score_method": "calibrated_recon_center_kl",
+    "score_components": [
+        "reconstruction_mse",
+        "latent_center_distance",
+        "kl_surprise"
+    ],
+    "score_weights": [
+        0.1,
+        0.6,
+        0.3
+    ],
+    "score_calibration": {
+        "median": [
+            0.5064849853515625,
+            0.0021286606788635254,
+            0.10245412588119507
+        ],
+        "iqr": [
+            0.38013407588005066,
+            0.002789615886285901,
+            0.005645640194416046
+        ]
+    },
+    "component_diagnostics": {
+        "normal": {
+            "median": {
+                "reconstruction_mse": 0.5323846340179443,
+                "latent_center_distance": 0.0019959821365773678,
+                "kl_surprise": 0.10267594456672668
+            },
+            "p90": {
+                "reconstruction_mse": 0.8784175515174867,
+                "latent_center_distance": 0.004857185389846565,
+                "kl_surprise": 0.1078189104795456
+            }
+        },
+        "attack": {
+            "median": {
+                "reconstruction_mse": 0.5887157917022705,
+                "latent_center_distance": 0.0028511248528957367,
+                "kl_surprise": 0.10286644101142883
+            },
+            "p90": {
+                "reconstruction_mse": 1.025786375999451,
+                "latent_center_distance": 0.00527659272775054,
+                "kl_surprise": 0.10822775363922119
+            }
+        }
+    },
+    "binary_label_policy": "0 = normal, y > 0 = attack",
+    "threshold_selection": {
+        "optimize_for": "balanced",
+        "min_normal_recall": 0.9,
+        "validation_metrics": {
+            "threshold": 0.6034096906428857,
+            "score": 0.24523805367269091,
+            "f1": 0.32260202632326485,
+            "normal_recall": 0.9001222992254383,
+            "attack_recall": 0.1936620719056416,
+            "precision": 0.9652925343533079
+        }
+    }
+}

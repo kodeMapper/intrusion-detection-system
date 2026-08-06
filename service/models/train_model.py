@@ -24,7 +24,7 @@ from sklearn.preprocessing import LabelEncoder
 # ======================================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATASET_PATH = PROJECT_ROOT / "data" / "UNSW_NB15_training-set.csv"
+DATASET_PATH = PROJECT_ROOT / "data" / "raw" / "UNSW_NB15_training-set.csv"
 
 df = pd.read_csv(DATASET_PATH)
 

@@ -28,7 +28,7 @@ import joblib
 # ======================================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DATASET_PATH = PROJECT_ROOT / "data" / "UNSW_NB15_training-set.csv"
+DATASET_PATH = PROJECT_ROOT / "data" / "raw" / "UNSW_NB15_training-set.csv"
 MODEL_DIR = PROJECT_ROOT / "service" / "models" / "artifacts"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 

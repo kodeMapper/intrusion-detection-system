@@ -20,7 +20,7 @@ RANDOM_STATE = 42
 
 ROOT = Path(__file__).resolve().parents[2]
 
-DATASET_PATH = ROOT / "data" / "UNSW_NB15_training-set.csv"
+DATASET_PATH = ROOT / "data" / "raw" / "UNSW_NB15_training-set.csv"
 
 print("Loading Dataset From:")
 print(DATASET_PATH)

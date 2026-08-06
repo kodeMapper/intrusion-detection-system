@@ -16,7 +16,7 @@ import tensorflow as tf
 # Load dataset for evaluation
 ROOT = Path(__file__).resolve().parents[3]
 MODEL_DIR = ROOT / "service" / "models" / "artifacts"
-DATA_PATH = ROOT / "data" / "UNSW_NB15_testing-set.csv"
+DATA_PATH = ROOT / "data" / "raw" / "UNSW_NB15_testing-set.csv"
 
 print("Loading Test Dataset...")
 df = pd.read_csv(DATA_PATH)

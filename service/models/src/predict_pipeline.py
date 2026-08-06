@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
     print("\nTesting Pipeline...")
 
-    TEST_PATH = ROOT / "data" / "UNSW_NB15_testing-set.csv"
+    TEST_PATH = ROOT / "data" / "raw" / "UNSW_NB15_testing-set.csv"
 
     print(f"Loading test data from {TEST_PATH}...")
 

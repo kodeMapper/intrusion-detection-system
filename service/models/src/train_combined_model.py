@@ -28,8 +28,8 @@ ROOT = Path(__file__).resolve().parents[3]
 MODEL_DIR = ROOT / "service" / "models" / "artifacts"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-train_path = ROOT / "data" / "UNSW_NB15_training-set.csv"
-test_path = ROOT / "data" / "UNSW_NB15_testing-set.csv"
+train_path = ROOT / "data" / "raw" / "UNSW_NB15_training-set.csv"
+test_path = ROOT / "data" / "raw" / "UNSW_NB15_testing-set.csv"
 
 train_df = pd.read_csv(train_path)
 test_df = pd.read_csv(test_path)

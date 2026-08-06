@@ -1,10 +1,25 @@
-globalPrompt.txt
-/others/Project Synopsis.pdf
+# Python & Virtual Environments
 .venv/
+venv/
 __pycache__/
 *.pyc
-service/models/artifacts/
-*.pkl
-*.h5
+*.pyo
+
+# Node.js Dependencies & Environment
 service/api/node_modules/
+service/dashboard/node_modules/
 service/api/.env
+service/dashboard/.env.local
+
+# Large Model Binary Weights (>100MB limit on GitHub)
+service/models/artifacts/final_rf.pkl
+*.ckpt
+
+# Scratch Scripts & Local IDE Configs
+scratch_*.py
+.gemini/
+.vscode/
+.idea/
+globalPrompt.txt
+
+skill-library/

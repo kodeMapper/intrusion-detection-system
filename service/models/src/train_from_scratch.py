@@ -27,7 +27,7 @@ from lightgbm import LGBMClassifier
 
 ROOT = Path(__file__).resolve().parents[3]
 
-DATA_PATH = ROOT / "data" / "UNSW_NB15_training-set.csv"
+DATA_PATH = ROOT / "data" / "raw" / "UNSW_NB15_training-set.csv"
 MODEL_DIR = ROOT / "service" / "models" / "artifacts"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -1,0 +1,45 @@
+{
+    "version": "v1",
+    "date": "2026-06-12",
+    "dataset": "unsw_nb15",
+    "random_seed": 42,
+    "split_ratio": {
+        "train": 0.7,
+        "val": 0.15,
+        "test": 0.15
+    },
+    "dropped_columns": [
+        "srcip",
+        "dstip",
+        "id",
+        "sport",
+        "dsport",
+        "Ltime",
+        "Stime"
+    ],
+    "dropped_attack_classes": [
+        "Analysis",
+        "Backdoor",
+        "Shellcode",
+        "Worms"
+    ],
+    "categorical_features": [
+        "proto",
+        "service",
+        "state"
+    ],
+    "categorical_encoding": "one_hot",
+    "scaler_type": "QuantileTransformer(normal)",
+    "lstm_window_size": 10,
+    "lstm_stride": 1,
+    "lstm_label_strategy": "last_flow",
+    "ae_training_data": "normal_only",
+    "label_map": {
+        "DoS": 0,
+        "Exploits": 1,
+        "Fuzzers": 2,
+        "Generic": 3,
+        "Normal": 4,
+        "Reconnaissance": 5
+    }
+}

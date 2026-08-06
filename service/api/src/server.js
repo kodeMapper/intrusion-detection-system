@@ -28,9 +28,47 @@ const config = {
   pythonCmd: process.env.PYTHON_CMD || "python",
   predictorScript:
     process.env.PREDICTOR_SCRIPT ||
-    path.join(ROOT, "service", "models", "src", "live_predictor_worker.py"),
+    path.join(ROOT, "service", "models", "src", "unified_predictor_worker.py"),
   reloadCsv: (process.env.RELOAD_CSV || "false").toLowerCase() === "true",
+  useCsvFallback: (process.env.USE_CSV_FALLBACK || "false").toLowerCase() === "true",
 };
+
+// ── CSV Fallback Data Store ──────────────────────────────────────────
+let csvRows = [];
+
+async function loadCsvRows() {
+  const csvText = await fs.readFile(config.csvPath, "utf8");
+  csvRows = parse(csvText, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+  });
+  return csvRows.length;
+}
+
+function normalizeRecord(rawRecord, sampleIndex) {
+  const record = { _sampleIndex: sampleIndex };
+
+  for (const [key, rawValue] of Object.entries(rawRecord)) {
+    if (rawValue === null || rawValue === undefined) {
+      record[key] = 0;
+      continue;
+    }
+
+    const value = String(rawValue).trim();
+    if (value.length === 0) {
+      record[key] = 0;
+      continue;
+    }
+
+    const maybeNumber = Number(value);
+    record[key] = Number.isFinite(maybeNumber) ? maybeNumber : value;
+  }
+
+  return record;
+}
+
+// ── Python Predictor Bridge ──────────────────────────────────────────
 
 class PythonPredictorBridge {
   constructor({ pythonCmd, scriptPath, rootDir }) {
@@ -88,7 +126,7 @@ class PythonPredictorBridge {
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error("Timed out waiting for predictor readiness."));
-      }, 20000);
+      }, 120000);  // 120s for model loading
 
       this.startResolver = {
         resolve: () => {
@@ -151,7 +189,7 @@ class PythonPredictorBridge {
       const timeout = setTimeout(() => {
         this.pending.delete(requestId);
         reject(new Error("Prediction request timed out."));
-      }, 10000);
+      }, 30000);  // 30s per prediction
 
       this.pending.set(requestId, {
         resolve: (response) => {
@@ -180,27 +218,7 @@ class PythonPredictorBridge {
   }
 }
 
-function normalizeRecord(rawRecord, sampleIndex) {
-  const record = { _sampleIndex: sampleIndex };
-
-  for (const [key, rawValue] of Object.entries(rawRecord)) {
-    if (rawValue === null || rawValue === undefined) {
-      record[key] = 0;
-      continue;
-    }
-
-    const value = String(rawValue).trim();
-    if (value.length === 0) {
-      record[key] = 0;
-      continue;
-    }
-
-    const maybeNumber = Number(value);
-    record[key] = Number.isFinite(maybeNumber) ? maybeNumber : value;
-  }
-
-  return record;
-}
+// ── MongoDB helpers ──────────────────────────────────────────────────
 
 async function ensureCsvLoaded(collection) {
   const currentCount = await collection.countDocuments();
@@ -240,6 +258,55 @@ async function ensureCsvLoaded(collection) {
   };
 }
 
+// ── Model Metrics Loader ─────────────────────────────────────────────
+
+let modelMetrics = null;
+
+async function loadModelMetrics() {
+  const artifactsDir = path.join(ROOT, "service", "models", "artifacts");
+  const result = {};
+
+  try {
+    const s1Report = JSON.parse(
+      await fs.readFile(path.join(artifactsDir, "dl_stage1_binary_report_v1.0.json"), "utf8")
+    );
+    result.stage1_binary = s1Report;
+  } catch {
+    result.stage1_binary = null;
+  }
+
+  try {
+    const s2Report = JSON.parse(
+      await fs.readFile(path.join(artifactsDir, "dl_stage2_multiclass_report_v1.0.json"), "utf8")
+    );
+    result.stage2_multiclass = s2Report;
+  } catch {
+    result.stage2_multiclass = null;
+  }
+
+  try {
+    const s1Thresh = JSON.parse(
+      await fs.readFile(path.join(artifactsDir, "dl_stage1_binary_threshold_v1.0.json"), "utf8")
+    );
+    result.stage1_threshold = s1Thresh;
+  } catch {
+    result.stage1_threshold = null;
+  }
+
+  try {
+    const aeThresh = JSON.parse(
+      await fs.readFile(path.join(artifactsDir, "dl_ae_threshold_v1.0.json"), "utf8")
+    );
+    result.ae_threshold = aeThresh;
+  } catch {
+    result.ae_threshold = null;
+  }
+
+  return result;
+}
+
+// ── Express App ──────────────────────────────────────────────────────
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -250,6 +317,14 @@ const state = {
   currentCursor: 0,
   totalSamples: 0,
   alerts: [],
+  // Extended stats
+  mlOnlyDetections: 0,
+  dlOnlyDetections: 0,
+  bothDetections: 0,
+  normalCount: 0,
+  zeroDay: 0,
+  attackBreakdown: {},
+  dlWarmupRemaining: 0,
 };
 
 let mongoClient;
@@ -267,7 +342,7 @@ function addAlert(alert) {
 }
 
 async function pollOnce() {
-  if (!mongoCollection || !predictor) {
+  if (!predictor) {
     return;
   }
 
@@ -278,11 +353,25 @@ async function pollOnce() {
   isPolling = true;
 
   try {
-    const sample = await mongoCollection.findOne({ _sampleIndex: state.currentCursor });
+    let sample;
 
-    if (!sample) {
-      state.currentCursor = 0;
-      return;
+    if (config.useCsvFallback) {
+      // CSV fallback mode — read directly from csvRows array
+      if (csvRows.length === 0) {
+        return;
+      }
+      const raw = csvRows[state.currentCursor % csvRows.length];
+      sample = normalizeRecord(raw, state.currentCursor);
+    } else {
+      // MongoDB mode
+      if (!mongoCollection) {
+        return;
+      }
+      sample = await mongoCollection.findOne({ _sampleIndex: state.currentCursor });
+      if (!sample) {
+        state.currentCursor = 0;
+        return;
+      }
     }
 
     const response = await predictor.predict(sample);
@@ -294,26 +383,63 @@ async function pollOnce() {
       state.currentCursor = 0;
     }
 
-    const prediction = response.prediction;
+    // Track DL warmup
+    if (response.dl_prediction === "warming_up") {
+      state.dlWarmupRemaining = Math.max(0, 10 - state.processedSamples);
+    } else {
+      state.dlWarmupRemaining = 0;
+    }
 
-    if (typeof prediction === "string" && prediction.toUpperCase() !== "NORMAL") {
+    const prediction = response.prediction;
+    const isAttack = typeof prediction === "string" && prediction.toUpperCase() !== "NORMAL";
+
+    if (isAttack) {
+      // Track engine source
+      if (response.verdict_source === "ml") state.mlOnlyDetections++;
+      else if (response.verdict_source === "dl") state.dlOnlyDetections++;
+      else if (response.verdict_source === "both") state.bothDetections++;
+
+      // Track attack breakdown
+      state.attackBreakdown[prediction] = (state.attackBreakdown[prediction] || 0) + 1;
+
       const alert = {
         sampleIndex: sample._sampleIndex,
         prediction,
         confidence: response.confidence,
+        ml_prediction: response.ml_prediction,
+        ml_confidence: response.ml_confidence,
+        dl_prediction: response.dl_prediction,
+        dl_confidence: response.dl_confidence,
+        dl_stage1_attack_prob: response.dl_stage1_attack_prob,
+        ae_anomaly_score: response.ae_anomaly_score,
+        zero_day_flag: response.zero_day_flag,
+        engine_agreement: response.engine_agreement,
+        verdict_source: response.verdict_source,
         detectedAt: new Date().toISOString(),
       };
 
       addAlert(alert);
 
       console.log(
-        `[ALERT] sample=${alert.sampleIndex} prediction=${alert.prediction} confidence=${alert.confidence.toFixed(4)}`
+        `[ALERT] sample=${alert.sampleIndex} prediction=${alert.prediction} ` +
+        `confidence=${alert.confidence.toFixed(4)} source=${alert.verdict_source} ` +
+        `ml=${alert.ml_prediction} dl=${alert.dl_prediction} ` +
+        `ae_score=${alert.ae_anomaly_score.toFixed(4)} zero_day=${alert.zero_day_flag}`
       );
+    } else {
+      state.normalCount++;
+    }
+
+    // Track zero-day flags (even on Normal samples)
+    if (response.zero_day_flag) {
+      state.zeroDay++;
     }
   } finally {
     isPolling = false;
   }
 }
+
+// ── API Routes ───────────────────────────────────────────────────────
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -323,6 +449,8 @@ app.get("/health", (_req, res) => {
     cursor: state.currentCursor,
     totalSamples: state.totalSamples,
     alertsCount: state.alerts.length,
+    mode: config.useCsvFallback ? "csv_fallback" : "mongodb",
+    dlWarmupRemaining: state.dlWarmupRemaining,
   });
 });
 
@@ -357,8 +485,39 @@ app.get("/config", (_req, res) => {
     csvPath: config.csvPath,
     pollIntervalMs: config.pollIntervalMs,
     predictorScript: config.predictorScript,
+    useCsvFallback: config.useCsvFallback,
   });
 });
+
+app.get("/stats", (_req, res) => {
+  const totalAlerts = state.alerts.length;
+  const totalProcessed = state.processedSamples;
+  const agreementCount = state.alerts.filter(a => a.engine_agreement).length;
+
+  res.json({
+    totalProcessed,
+    totalAlerts,
+    normalCount: state.normalCount,
+    mlOnlyDetections: state.mlOnlyDetections,
+    dlOnlyDetections: state.dlOnlyDetections,
+    bothDetections: state.bothDetections,
+    zeroDay: state.zeroDay,
+    attackBreakdown: state.attackBreakdown,
+    engineAgreementRate: totalAlerts > 0
+      ? ((agreementCount / totalAlerts) * 100).toFixed(1) + "%"
+      : "N/A",
+    dlWarmupRemaining: state.dlWarmupRemaining,
+  });
+});
+
+app.get("/metrics", (_req, res) => {
+  if (!modelMetrics) {
+    return res.json({ error: "Metrics not loaded yet." });
+  }
+  res.json(modelMetrics);
+});
+
+// ── Lifecycle ────────────────────────────────────────────────────────
 
 async function shutdown() {
   if (pollTimer) {
@@ -385,14 +544,29 @@ async function shutdown() {
 }
 
 async function bootstrap() {
-  mongoClient = new MongoClient(config.mongoUri);
-  await mongoClient.connect();
+  // Load model metrics (static, loaded once)
+  modelMetrics = await loadModelMetrics();
+  console.log("[startup] Model metrics loaded.");
 
-  const db = mongoClient.db(config.dbName);
-  mongoCollection = db.collection(config.collectionName);
+  let seedStatus;
 
-  const seedStatus = await ensureCsvLoaded(mongoCollection);
-  state.totalSamples = seedStatus.total;
+  if (config.useCsvFallback) {
+    // CSV fallback — no MongoDB needed
+    const count = await loadCsvRows();
+    state.totalSamples = count;
+    seedStatus = { inserted: count, total: count, reusedExisting: false };
+    console.log(`[startup] CSV fallback mode: loaded ${count} rows from ${config.csvPath}`);
+  } else {
+    // MongoDB mode
+    mongoClient = new MongoClient(config.mongoUri);
+    await mongoClient.connect();
+
+    const db = mongoClient.db(config.dbName);
+    mongoCollection = db.collection(config.collectionName);
+
+    seedStatus = await ensureCsvLoaded(mongoCollection);
+    state.totalSamples = seedStatus.total;
+  }
 
   predictor = new PythonPredictorBridge({
     pythonCmd: config.pythonCmd,
@@ -400,7 +574,9 @@ async function bootstrap() {
     rootDir: ROOT,
   });
 
+  console.log("[startup] Starting predictor (loading models — this may take 30-60s) …");
   await predictor.start();
+  console.log("[startup] Predictor ready.");
 
   pollTimer = setInterval(() => {
     pollOnce().catch((error) => {
@@ -413,16 +589,20 @@ async function bootstrap() {
   httpServer = app.listen(config.port, () => {
     console.log("IDPS test server started");
     console.log(`Port: ${config.port}`);
-    console.log(`MongoDB: ${config.mongoUri}`);
-    console.log(`Database: ${config.dbName}`);
-    console.log(`Collection: ${config.collectionName}`);
+    console.log(`Mode: ${config.useCsvFallback ? "CSV Fallback" : "MongoDB"}`);
+    if (!config.useCsvFallback) {
+      console.log(`MongoDB: ${config.mongoUri}`);
+      console.log(`Database: ${config.dbName}`);
+      console.log(`Collection: ${config.collectionName}`);
+    }
     console.log(`CSV seed: ${config.csvPath}`);
     console.log(
       seedStatus.reusedExisting
-        ? `Using existing Mongo data (${seedStatus.total} records)`
-        : `Loaded ${seedStatus.inserted} records into MongoDB`
+        ? `Using existing data (${seedStatus.total} records)`
+        : `Loaded ${seedStatus.inserted} records`
     );
-    console.log("Polling every 1 second and showing only non-NORMAL predictions.");
+    console.log("Polling every 1 second — ML + DL + AE engines active.");
+    console.log("Endpoints: /health, /alerts, /poll-once, /config, /stats, /metrics");
   });
 }
 

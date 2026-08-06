@@ -35,7 +35,7 @@ Before starting, ensure you have the following installed:
 
 ## 🧠 Step 2: Start the Backend (API Server)
 
-The backend connects to MongoDB, reads the test dataset, and runs the AI prediction models to detect anomalies.
+The backend connects to MongoDB, reads the test dataset, and runs the unified predictor (ML Baseline + DL Transformers + AE Zero-Day Canary) in parallel to detect anomalies.
 
 1. Install the backend dependencies:
    ```bash

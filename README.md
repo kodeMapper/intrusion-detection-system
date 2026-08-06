@@ -8,7 +8,7 @@ An AI-powered network Intrusion Detection and Prevention System with explainable
 
 ## Key Features
 
-- **Multi-model detection:** Random Forest, XGBoost, LSTM, and Autoencoder for both supervised and anomaly-based detection.
+- **Hybrid Multi-Engine Detection:** Runs a unified pipeline combining an ML Baseline (XGBoost, Random Forest, LightGBM), a DL Advanced Engine (Temporal Transformers for sequence modeling), and an AE Anomaly Canary (TemporalOneClassVAE for zero-day detection).
 - **Explainable alerts (primary innovation):** Per-alert SHAP/LIME explanations visualized in the dashboard so operators understand *why* traffic was flagged.
 - **SOAR-lite automated remediation (secondary innovation):** Maps alerts to safe mitigation actions (iptables block, quarantine) with human-approval gates and one-click rollback.
 - **Real-time dashboard:** React-based UI with alert timeline, SHAP force plots, and SOAR controls.
@@ -58,7 +58,7 @@ An AI-powered network Intrusion Detection and Prevention System with explainable
 |-------|-----------|
 | OS | Ubuntu 22.04 LTS |
 | Data Collection | tcpdump, tshark, Zeek |
-| ML/DL | Python, scikit-learn, XGBoost, PyTorch |
+| ML/DL | Python, scikit-learn, XGBoost, LightGBM, PyTorch (Transformers/VAE) |
 | Explainability | SHAP, LIME |
 | Backend | FastAPI, PostgreSQL, Redis |
 | Dashboard | React, Chart.js, D3.js |

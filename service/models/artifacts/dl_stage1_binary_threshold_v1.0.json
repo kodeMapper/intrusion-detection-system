@@ -1,0 +1,37 @@
+{
+    "model_type": "TemporalTransformerClassifier",
+    "task": "stage1_binary_attack_gate",
+    "model_hparams": {
+        "input_size": 198,
+        "seq_len": 10,
+        "num_classes": 2,
+        "d_model": 128,
+        "n_heads": 4,
+        "num_layers": 2,
+        "dim_feedforward": 256,
+        "classifier_hidden": 128,
+        "dropout": 0.15,
+        "lr": 0.0005,
+        "weight_decay": 0.0001,
+        "focal_gamma": 1.5,
+        "class_weights": [
+            1.2589738368988037,
+            0.7410262227058411
+        ]
+    },
+    "normal_label": 4,
+    "label_policy": "0 = Normal, 1 = Attack where original label != label_map['Normal']",
+    "attack_probability_threshold": 0.21845857985298406,
+    "threshold_selection": {
+        "optimize_for": "attack recall + f1",
+        "min_normal_recall": 0.9,
+        "validation_metrics": {
+            "threshold": 0.21845857985298406,
+            "score": 0.9938993160181313,
+            "normal_recall": 0.9286277885374077,
+            "attack_recall": 0.998902814702283,
+            "f1": 0.9788888199656762,
+            "precision": 0.9596610719208627
+        }
+    }
+}

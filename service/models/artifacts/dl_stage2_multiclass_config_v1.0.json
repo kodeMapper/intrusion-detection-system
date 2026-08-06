@@ -1,0 +1,60 @@
+{
+    "model_type": "TemporalTransformerClassifier",
+    "task": "stage2_multiclass_attack_classifier",
+    "model_hparams": {
+        "input_size": 198,
+        "seq_len": 10,
+        "num_classes": 5,
+        "d_model": 128,
+        "n_heads": 4,
+        "num_layers": 2,
+        "dim_feedforward": 256,
+        "classifier_hidden": 128,
+        "dropout": 0.15,
+        "lr": 0.0005,
+        "weight_decay": 0.0001,
+        "focal_gamma": 1.5,
+        "class_weights": [
+            1.4332189559936523,
+            0.5263919234275818,
+            0.9666543006896973,
+            0.3981086313724518,
+            1.675626277923584
+        ]
+    },
+    "normal_label": 4,
+    "attack_classes": [
+        "DoS",
+        "Exploits",
+        "Fuzzers",
+        "Generic",
+        "Reconnaissance"
+    ],
+    "stage2_label_map": {
+        "DoS": 0,
+        "Exploits": 1,
+        "Fuzzers": 2,
+        "Generic": 3,
+        "Reconnaissance": 4
+    },
+    "original_to_stage2_label": {
+        "0": 0,
+        "1": 1,
+        "2": 2,
+        "3": 3,
+        "5": 4
+    },
+    "confidence_policy": {
+        "confidence_threshold": 0.44999999999999996,
+        "coverage": 0.965649660294552,
+        "macro_recall": 0.7892378565436389,
+        "unclassified_rate": 0.034350339705447985
+    },
+    "acceptance": {
+        "accepted": true,
+        "reason": "Generic recall must be above 0.05 and Normal must not be present in Stage 2 labels.",
+        "validation_macro_recall": 0.8039831250390419,
+        "validation_macro_f1": 0.7560672599700933,
+        "validation_generic_recall": 0.9741789354473386
+    }
+}

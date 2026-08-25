@@ -4,7 +4,7 @@
 
 ---
 
-> **Audience:** Developer implementing the DL branch. This document assumes familiarity with the existing classical ML pipeline ([train_combined_model.py](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py), [train_from_scratch.py](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_from_scratch.py), [ensemble_model.py](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/ensemble_model.py)) and the project architecture ([02_tech_and_architecture.md](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/documentation/02_tech_and_architecture.md)).
+> **Audience:** Developer implementing the DL branch. This document assumes familiarity with the existing classical ML pipeline ([train_combined_model.py](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py), [train_from_scratch.py](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_from_scratch.py), [ensemble_model.py](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/ensemble_model.py)) and the project architecture ([02_tech_and_architecture.md](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/documentation/02_tech_and_architecture.md)).
 
 ---
 
@@ -48,7 +48,7 @@ We evaluate each dataset against five requirements that matter for a production 
 | Criterion | Weight | Rationale |
 |---|---|---|
 | **Live-feature availability** | Critical | If a dataset's discriminative features cannot be extracted from live packets/flows, a model trained on it will fail at inference time. |
-| **Schema compatibility with existing pipeline** | High | The ML engine already preprocesses UNSW-NB15 ([train_combined_model.py L56-58](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py#L56-L58)). Reusing schemas reduces integration cost. |
+| **Schema compatibility with existing pipeline** | High | The ML engine already preprocesses UNSW-NB15 ([train_combined_model.py L56-58](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py#L56-L58)). Reusing schemas reduces integration cost. |
 | **Label quality and class balance** | High | Clean, unambiguous labels reduce noise. Sufficient per-class volume enables robust per-class evaluation. |
 | **Attack diversity and modernity** | Medium | Broader attack coverage improves generalization. Modern attack types are more relevant than legacy patterns. |
 | **Research comparability** | Low | Useful for paper benchmarks, but secondary to operational performance. |
@@ -59,13 +59,13 @@ We evaluate each dataset against five requirements that matter for a production 
 
 **Justification:**
 
-1. **Live-feature fit:** UNSW-NB15's feature set (flow duration, byte/packet counts, TTL, TCP flags, service, state, connection-count windows) maps directly to what Zeek `conn.log` and CICFlowMeter produce. The existing pipeline already proves this — [live_predictor_worker.py](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/live_predictor_worker.py) runs inference using exactly these features.
+1. **Live-feature fit:** UNSW-NB15's feature set (flow duration, byte/packet counts, TTL, TCP flags, service, state, connection-count windows) maps directly to what Zeek `conn.log` and CICFlowMeter produce. The existing pipeline already proves this — [live_predictor_worker.py](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/live_predictor_worker.py) runs inference using exactly these features.
 
-2. **Schema already integrated:** The entire preprocessing, encoding, and feature-selection pipeline is built for UNSW-NB15 columns. The DL branch must share the same preprocessing artifacts (encoders, scalers) to participate in the ensemble ([ensemble_model.py L44-51](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/ensemble_model.py#L44-L51)). Starting from a different primary dataset would require a parallel preprocessing stack — unnecessary complexity.
+2. **Schema already integrated:** The entire preprocessing, encoding, and feature-selection pipeline is built for UNSW-NB15 columns. The DL branch must share the same preprocessing artifacts (encoders, scalers) to participate in the ensemble ([ensemble_model.py L44-51](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/ensemble_model.py#L44-L51)). Starting from a different primary dataset would require a parallel preprocessing stack — unnecessary complexity.
 
 3. **Label quality:** After dropping the four weak classes (Analysis, Backdoor, Shellcode, Worms — see [Section 6](#6-rare-and-low-value-attack-class-policy)), the remaining 6 classes (Normal, Generic, Exploits, Fuzzers, DoS, Reconnaissance) each have ≥3,400 samples, which is sufficient for supervised DL.
 
-4. **Proven baseline:** The classical ensemble achieves 89.75% accuracy / 81.58% macro recall on this dataset ([ml.md L459-475](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/docs_sahil/ml.md#L459-L475)). The DL branch has a concrete target to beat or complement.
+4. **Proven baseline:** The classical ensemble achieves 89.75% accuracy / 81.58% macro recall on this dataset ([ml.md L459-475](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/docs_sahil/ml.md#L459-L475)). The DL branch has a concrete target to beat or complement.
 
 #### 🥈 CICIDS2017 → Secondary (Augmentation + Generalization Testing)
 
@@ -75,7 +75,7 @@ We evaluate each dataset against five requirements that matter for a production 
 
 2. **Feature overlap:** The core flow features (duration, fwd/bwd bytes, fwd/bwd packets, IAT stats, flag counts) exist in both datasets. Approximately 20–25 features can be aligned directly (see [Section 11](#11-cross-dataset-harmonization-strategy)).
 
-3. **Generalization validation:** The cross-dataset experiments defined in [05_experimental_plan L189-196](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/documentation/05_experimental_plan_and_metrics.md#L189-L196) require CICIDS2017 as a test target. A DL model that performs well on UNSW-NB15 but collapses on CICIDS2017 is operationally useless.
+3. **Generalization validation:** The cross-dataset experiments defined in [05_experimental_plan L189-196](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/documentation/05_experimental_plan_and_metrics.md#L189-L196) require CICIDS2017 as a test target. A DL model that performs well on UNSW-NB15 but collapses on CICIDS2017 is operationally useless.
 
 4. **Not primary because:** The schema is different (78 CICFlowMeter columns vs. 49 UNSW columns), column names are inconsistent, and some CICIDS features contain NaN/Infinity values that require extra cleaning. Using it as primary would add integration friction without proportional benefit.
 
@@ -112,7 +112,7 @@ Every feature used by the DL models must satisfy this test:
 
 If the answer is no, the feature is dropped — regardless of its training-time predictive power.
 
-**Why this is non-negotiable:** The existing [live_predictor_worker.py](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/live_predictor_worker.py) receives flow records from the collector → preprocessor pipeline ([02_tech_and_architecture.md](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/documentation/02_tech_and_architecture.md) data flow diagram). The DL models will receive the same feature vectors. If a feature doesn't exist in the live flow record, it will be zero or missing — and the model's learned weights for it become noise.
+**Why this is non-negotiable:** The existing [live_predictor_worker.py](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/live_predictor_worker.py) receives flow records from the collector → preprocessor pipeline ([02_tech_and_architecture.md](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/documentation/02_tech_and_architecture.md) data flow diagram). The DL models will receive the same feature vectors. If a feature doesn't exist in the live flow record, it will be zero or missing — and the model's learned weights for it become noise.
 
 ### 2.2 Three-Tier Feature Categorization
 
@@ -124,11 +124,11 @@ If the answer is no, the feature is dropped — regardless of its training-time 
 
 ### 2.3 Consistency with Classical Pipeline
 
-The existing pipeline drops `srcip`, `dstip`, `id`, `Stime`, `Ltime` ([train_combined_model.py L56](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py#L56)). The DL pipeline must drop the same columns **plus** apply additional scrutiny because:
+The existing pipeline drops `srcip`, `dstip`, `id`, `Stime`, `Ltime` ([train_combined_model.py L56](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py#L56)). The DL pipeline must drop the same columns **plus** apply additional scrutiny because:
 
 - Neural networks are more susceptible to overfitting on spurious correlations than tree ensembles.
 - Raw port numbers (`sport`, `dsport`) are high-cardinality integers that trees handle via splits but dense layers memorize.
-- The DL branch adds StandardScaler normalization ([train_dl_model.py L70-72](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_dl_model.py#L70-L72)), which means features with extreme outliers or non-informative distributions (constant, near-constant) can distort the scale.
+- The DL branch adds StandardScaler normalization ([train_dl_model.py L70-72](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_dl_model.py#L70-L72)), which means features with extreme outliers or non-informative distributions (constant, near-constant) can distort the scale.
 
 ---
 
@@ -177,7 +177,7 @@ The existing pipeline drops `srcip`, `dstip`, `id`, `Stime`, `Ltime` ([train_com
 | `synack` | Flow | **KEEP** | SYN-ACK round-trip time |
 | `ackdat` | Flow | **KEEP** | ACK data round-trip time |
 | `tcprtt` | Flow | **KEEP** | TCP round-trip time |
-| `ct_state_ttl` | Window | **KEEP** | Connection count per state/TTL — top feature per [ml.md L303-314](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/docs_sahil/ml.md#L303-L314) |
+| `ct_state_ttl` | Window | **KEEP** | Connection count per state/TTL — top feature per [ml.md L303-314](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/docs_sahil/ml.md#L303-L314) |
 | `ct_flw_http_mthd` | Window | **KEEP** | HTTP method count |
 | `is_ftp_login` | Binary | **KEEP** | FTP login flag |
 | `ct_ftp_cmd` | Window | **KEEP** | FTP command count |
@@ -215,7 +215,7 @@ After applying all keep/drop/derive decisions:
 
 ### 4.1 Encoding Method: One-Hot Encoding for DL
 
-The existing classical pipeline uses `LabelEncoder` for categorical features ([train_combined_model.py L103-112](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py#L103-L112)). This is appropriate for tree models (which can split on ordinal values) but **inappropriate for neural networks** because:
+The existing classical pipeline uses `LabelEncoder` for categorical features ([train_combined_model.py L103-112](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py#L103-L112)). This is appropriate for tree models (which can split on ordinal values) but **inappropriate for neural networks** because:
 
 - LabelEncoder assigns arbitrary integer codes (e.g., TCP=0, UDP=1, ICMP=2). A dense layer will interpret "UDP is between TCP and ICMP" — which is nonsensical.
 - One-hot encoding creates orthogonal dimensions, which is correct for categorical data in gradient-based optimization.
@@ -251,7 +251,7 @@ CARDINALITY_CAPS = {
 
 ### 5.1 The Problem — Quantified
 
-UNSW-NB15 combined dataset after dropping weak classes (from [ml.md L80-91](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/docs_sahil/ml.md#L80-L91)):
+UNSW-NB15 combined dataset after dropping weak classes (from [ml.md L80-91](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/docs_sahil/ml.md#L80-L91)):
 
 | Class | Approx. Count | % of Total |
 |---|---|---|
@@ -310,7 +310,7 @@ class_weight_dict = dict(zip(np.unique(y_train), weights))
 
 Pass `class_weight_dict` to PyTorch's `CrossEntropyLoss` via the `weight` parameter (as a tensor).
 
-The existing DL script already does this ([train_dl_model.py L86-93](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_dl_model.py#L86-L93)) — carry it forward.
+The existing DL script already does this ([train_dl_model.py L86-93](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_dl_model.py#L86-L93)) — carry it forward.
 
 #### Layer 3 — Decision Threshold Tuning
 
@@ -321,7 +321,7 @@ The default argmax threshold (predict the class with highest probability) is sub
 3. Select per-class thresholds that maximize recall while keeping precision ≥ 30% (or per operational tolerance).
 4. Store thresholds as a JSON artifact: `dl_thresholds_v{N}.json`.
 
-The existing ensemble already applies per-class thresholds ([ensemble_model.py L165-172](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/ensemble_model.py#L165-L172)). The DL branch must produce similar per-class threshold configs.
+The existing ensemble already applies per-class thresholds ([ensemble_model.py L165-172](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/ensemble_model.py#L165-L172)). The DL branch must produce similar per-class threshold configs.
 
 ---
 
@@ -329,7 +329,7 @@ The existing ensemble already applies per-class thresholds ([ensemble_model.py L
 
 ### 6.1 Classes to Drop from DL Training
 
-Consistent with the existing pipeline ([train_combined_model.py L65-72](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py#L65-L72)):
+Consistent with the existing pipeline ([train_combined_model.py L65-72](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_combined_model.py#L65-L72)):
 
 | Class | Sample Count (Full) | Decision | Reason |
 |---|---|---|---|
@@ -470,7 +470,7 @@ ae_test = X_test
 
 1. If the Autoencoder sees attack traffic during training, it learns to reconstruct attacks — which means attacks will have LOW reconstruction error and be missed.
 2. The unsupervised approach catches **novel attacks** that the LSTM (supervised) has never seen. This is the architectural justification for running both models.
-3. This aligns with the project's goal of detecting "both known and unknown attacks" ([01_project_overview.md L22](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/documentation/01_project_overview.md#L22)).
+3. This aligns with the project's goal of detecting "both known and unknown attacks" ([01_project_overview.md L22](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/documentation/01_project_overview.md#L22)).
 
 ### 9.4 Anomaly Threshold Calibration
 
@@ -617,7 +617,7 @@ preprocessing_config_v1_20260612.json
 | AE normal-only training set | `.parquet` | Reproduce AE training data |
 | Preprocessing config | `.json` | All hyperparams: window size, stride, cardinality caps, SMOTE params, threshold |
 | EDA reports | `.png` + `.csv` | Audit trail |
-| SHA-256 checksums of raw data | `checksums.sha256` | Verify data integrity ([05_experimental_plan L267](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/documentation/05_experimental_plan_and_metrics.md#L267)) |
+| SHA-256 checksums of raw data | `checksums.sha256` | Verify data integrity ([05_experimental_plan L267](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/documentation/05_experimental_plan_and_metrics.md#L267)) |
 
 ### 12.3 `preprocessing_config.json` Template
 
@@ -707,7 +707,7 @@ data/
     └── eda_log.txt
 ```
 
-This structure aligns with the existing `data/` directory ([project structure](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/README.md#L36-L37)) and the `experiments/` convention described in [03_implementation_plan.md L24](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/documentation/03_implementation_plan.md#L24).
+This structure aligns with the existing `data/` directory ([project structure](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/README.md#L36-L37)) and the `experiments/` convention described in [03_implementation_plan.md L24](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/documentation/03_implementation_plan.md#L24).
 
 ---
 

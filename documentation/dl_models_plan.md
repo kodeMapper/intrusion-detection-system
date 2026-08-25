@@ -4,7 +4,7 @@
 
 ---
 
-> **Audience:** Developer implementing the DL branch. This document assumes familiarity with the existing classical ML pipeline ([train_stage2_major.py](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_stage2_major.py), [train_stage1_binary.py](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_stage1_binary.py), and [ensemble_model.py](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/service/models/src/ensemble_model.py)) and the datasets design plan ([dl_datasets_plan.md](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/documentation/dl_datasets_plan.md)).
+> **Audience:** Developer implementing the DL branch. This document assumes familiarity with the existing classical ML pipeline ([train_stage2_major.py](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_stage2_major.py), [train_stage1_binary.py](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/train_stage1_binary.py), and [ensemble_model.py](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/service/models/src/ensemble_model.py)) and the datasets design plan ([dl_datasets_plan.md](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/documentation/dl_datasets_plan.md)).
 
 ---
 
@@ -64,7 +64,7 @@ The deep learning (DL) branch implements two distinct neural architectures, each
 ### 1.2 Common Preprocessing Bridge
 
 To ensure optimal performance and avoid feature drift, both models consume feature vectors preprocessed by the same pipeline:
-1. Feature Keep/Drop selection as defined in [dl_datasets_plan.md](file:///c:/Users/acer/Desktop/Linux%20Shared%20Folder/Project%20Repo/documentation/dl_datasets_plan.md).
+1. Feature Keep/Drop selection as defined in [dl_datasets_plan.md](file:///d:/Sarang/Skills/Linux%20Shared%20Folder/Project%20Repo/documentation/dl_datasets_plan.md).
 2. Cardinality-capped One-Hot Encoding for categorical features (`proto`, `service`, `state`).
 3. Standard scaling (fitted on train split normal traffic for Autoencoder, and full train split for LSTM).
 

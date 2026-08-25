@@ -15,11 +15,27 @@ service/dashboard/.env.local
 service/models/artifacts/final_rf.pkl
 *.ckpt
 
+# Datasets, Sequences & Parquet Files
+data/sequences/
+data/raw/cicids2017/
+data/raw/nslkdd/
+data/processed/
+*.npy
+*.parquet
+*.arff
+
+# TensorBoard & Training Logs
+service/models/src/lightning_logs/
+lightning_logs/
+*.tfevents.*
+
 # Scratch Scripts & Local IDE Configs
 scratch_*.py
 .gemini/
 .vscode/
 .idea/
 globalPrompt.txt
+dev_assignment_plan.md
+assignWorkPrompt.txt
 
 skill-library/

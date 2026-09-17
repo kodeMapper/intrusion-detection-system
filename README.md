@@ -35,13 +35,13 @@ An AI-powered network Intrusion Detection and Prevention System with explainable
 │   └── 10_future_work_and_risks.md
 ├── data/                   # Raw/processed datasets (or download scripts)
 ├── notebooks/              # Jupyter notebooks (EDA, experiments)
-├── src/
+├── service/                # All runtime components (actual convention; supersedes the src/ sketch below)
 │   ├── collector/          # Pcap/log collectors, parsers (tcpdump, Zeek)
 │   ├── preproc/            # Feature extraction, encoding, scaling
 │   ├── models/             # ML/DL training scripts, saved models
-│   ├── api/                # FastAPI backend
+│   ├── api/                # Existing Node/Express demo bridge (Mongo-backed)
+│   ├── detection_api/      # FastAPI backend: detection, explainability (SHAP/LIME), alerting
 │   ├── dashboard/          # React frontend
-│   ├── mobile/             # Mobile notification client (optional)
 │   └── automation/         # SOAR-lite: iptables/Suricata automation
 ├── infra/                  # Dockerfiles, docker-compose, Kubernetes manifests
 ├── experiments/            # Training logs, metrics, MLflow artifacts

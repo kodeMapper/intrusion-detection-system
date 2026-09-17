@@ -5,6 +5,11 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Test & coverage artifacts
+.coverage
+.pytest_cache/
+htmlcov/
+
 # Node.js Dependencies & Environment
 service/api/node_modules/
 service/dashboard/node_modules/
@@ -39,3 +44,4 @@ dev_assignment_plan.md
 assignWorkPrompt.txt
 
 skill-library/
+documentation/ml_engine_test.mp4

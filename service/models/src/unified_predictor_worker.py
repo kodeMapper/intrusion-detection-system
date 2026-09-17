@@ -185,18 +185,14 @@ class DLAdvancedEngine:
         return len(self.buffer) >= self.SEQ_LEN
 
     @torch.no_grad()
-    def predict(self) -> dict:
-        """Run Stage 1 → conditionally Stage 2 on the current window."""
-        if not self.is_warm:
-            return {
-                "dl_prediction": "warming_up",
-                "dl_confidence": 0.0,
-                "dl_stage1_attack_prob": 0.0,
-            }
+    def predict_from_tensor(self, tensor: torch.Tensor) -> dict:
+        """Run Stage 1 → conditionally Stage 2 on an explicit (1,10,198) window.
 
-        seq = np.stack(list(self.buffer), axis=0)  # (10, 198)
-        tensor = torch.tensor(seq, dtype=torch.float32).unsqueeze(0).to(self.device)  # (1,10,198)
-
+        Extracted from predict() so callers holding their own window state
+        (e.g. a per-flow-key store in the detection API, instead of this
+        engine's single global buffer) can reuse the exact same gating logic
+        rather than re-implementing it and risking drift.
+        """
         # Stage 1 — binary
         s1_probs = self.stage1.predict_proba(tensor)  # (1,2)
         attack_prob = float(s1_probs[0, 1].item())
@@ -219,6 +215,20 @@ class DLAdvancedEngine:
             "dl_confidence": cls_conf,
             "dl_stage1_attack_prob": attack_prob,
         }
+
+    @torch.no_grad()
+    def predict(self) -> dict:
+        """Run Stage 1 → conditionally Stage 2 on the current window."""
+        if not self.is_warm:
+            return {
+                "dl_prediction": "warming_up",
+                "dl_confidence": 0.0,
+                "dl_stage1_attack_prob": 0.0,
+            }
+
+        seq = np.stack(list(self.buffer), axis=0)  # (10, 198)
+        tensor = torch.tensor(seq, dtype=torch.float32).unsqueeze(0).to(self.device)  # (1,10,198)
+        return self.predict_from_tensor(tensor)
 
     def get_tensor(self) -> torch.Tensor | None:
         """Return current window as tensor for AE engine reuse."""

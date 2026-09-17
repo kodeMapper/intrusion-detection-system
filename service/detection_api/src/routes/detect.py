@@ -6,13 +6,18 @@ failure (guaranteed by DetectionService's use of safe_explain — no explainer
 exception can reach this route); 503 for an unready/unavailable detection
 engine or a repository failure (DetectionUnavailableError); plain 500 only
 for genuinely unexpected bugs, never masked.
+
+Notifications (email/Slack) are dispatched via FastAPI's BackgroundTasks —
+passed through to DetectionService.detect_flow — so SMTP/Slack latency never
+rides on this response; persistence itself still happens synchronously, so a
+returned alert always has a real ID.
 """
 from __future__ import annotations
 
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from service.detection_api.src.models.schemas import DetectRequest, DetectResponse, FlowInput
 from service.detection_api.src.services.detection import DetectionUnavailableError
@@ -36,14 +41,19 @@ def _derive_flow_key(flow: FlowInput, request_flow_key: str | None) -> str:
 
 
 @router.post("/detect", response_model=DetectResponse)
-async def detect(payload: DetectRequest, service=Depends(get_detection_service)) -> DetectResponse:
+async def detect(
+    payload: DetectRequest, background_tasks: BackgroundTasks, service=Depends(get_detection_service)
+) -> DetectResponse:
     start = time.perf_counter()
     request_id = str(uuid4())
 
     try:
         results = [
             await service.detect_flow(
-                flow, flow_key=_derive_flow_key(flow, payload.flow_key), explain=payload.explain
+                flow,
+                flow_key=_derive_flow_key(flow, payload.flow_key),
+                explain=payload.explain,
+                background_tasks=background_tasks,
             )
             for flow in payload.flows
         ]

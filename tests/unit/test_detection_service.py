@@ -85,6 +85,18 @@ class RaisingNotifier:
         raise RuntimeError("smtp exploded")
 
 
+class FakeBackgroundTasks:
+    """Matches fastapi.BackgroundTasks' add_task interface -- captures the
+    call instead of running it, so tests can assert scheduling happened
+    without needing a real FastAPI app/event loop shutdown to run it."""
+
+    def __init__(self):
+        self.tasks: list[tuple] = []
+
+    def add_task(self, func, *args, **kwargs):
+        self.tasks.append((func, args, kwargs))
+
+
 def _flow(benign_flow: dict) -> FlowInput:
     return FlowInput(**benign_flow, src_ip="10.0.0.1", dst_ip="10.0.0.2", src_port=1234, dst_port=80)
 
@@ -258,6 +270,41 @@ class TestNotificationOrdering:
         response = await service.detect_flow(_flow(attack_flow), flow_key="k", explain=False)
         assert response.prediction == "DoS"
         assert len(repo.created) == 1
+
+    @pytest.mark.asyncio
+    async def test_background_tasks_schedules_notify_instead_of_awaiting_inline(self, attack_flow: dict) -> None:
+        # Per the original design (Phase 4) and the Phase 9 review finding:
+        # SMTP/Slack latency must never ride on the /detect response. When a
+        # BackgroundTasks-like object is passed, notify() must be scheduled
+        # via add_task, not awaited inline -- so it hasn't run by the time
+        # detect_flow returns.
+        engines = FakeEngineBundle(ml_pred="DoS", ml_conf=0.95)
+        repo = FakeRepository()
+        notifier = SpyNotifier()
+        service = _make_service(engines, repo=repo, notifier=notifier)
+        background_tasks = FakeBackgroundTasks()
+
+        response = await service.detect_flow(
+            _flow(attack_flow), flow_key="k", explain=False, background_tasks=background_tasks
+        )
+
+        assert response.prediction == "DoS"
+        assert len(repo.created) == 1
+        assert len(notifier.sent) == 0  # not yet run -- only scheduled
+        assert len(background_tasks.tasks) == 1
+        func, args, kwargs = background_tasks.tasks[0]
+        await func(*args, **kwargs)  # simulate FastAPI running it after the response
+        assert len(notifier.sent) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_background_tasks_still_notifies_inline(self, attack_flow: dict) -> None:
+        # Backward-compatible default for non-HTTP callers (or tests) that
+        # don't pass background_tasks at all.
+        engines = FakeEngineBundle(ml_pred="DoS", ml_conf=0.95)
+        notifier = SpyNotifier()
+        service = _make_service(engines, notifier=notifier)
+        await service.detect_flow(_flow(attack_flow), flow_key="k", explain=False, background_tasks=None)
+        assert len(notifier.sent) == 1
 
 
 class TestAttackProbabilitySource:

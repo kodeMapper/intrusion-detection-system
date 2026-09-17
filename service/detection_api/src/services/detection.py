@@ -14,12 +14,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
-from uuid import UUID
 
+import anyio
 import numpy as np
 
 from models.src.explain import ExplanationResult, safe_explain
 from service.detection_api.src.models.schemas import (
+    Alert,
     AlertCreate,
     AlertRepository,
     FlowInput,
@@ -55,6 +56,97 @@ class EngineBundle(Protocol):
     def score_ae(self, window: np.ndarray) -> tuple[float, bool]: ...
 
 
+class BackgroundTaskRunner(Protocol):
+    """Matches fastapi.BackgroundTasks' interface without importing FastAPI
+    here — detection.py stays framework-agnostic and independently testable."""
+
+    def add_task(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None: ...
+
+
+class UnifiedEngineBundle:
+    """Concrete EngineBundle backed by the real trained models.
+
+    In-process import of unified_predictor_worker's engine classes (see
+    module docstring for why subprocess integration was rejected).
+    DLAdvancedEngine's own internal sliding-window buffer is never used here
+    — FlowWindowStore replaces it with a bounded, per-flow-key window, so
+    only DLAdvancedEngine's preprocessor/stage1/stage2 are reused via
+    predict_from_tensor(), never its own predict()/push_flow().
+
+    ml_transform() and ml_label_classes are exposed beyond the EngineBundle
+    Protocol specifically for ExplanationService, which needs the same
+    ML-side transformed row and label space that MLBaselineEngine.predict()
+    used internally to produce ml_pred.
+    """
+
+    def __init__(self, *, device=None) -> None:
+        import torch
+
+        from models.src.unified_predictor_worker import AEAnomalyEngine, DLAdvancedEngine, MLBaselineEngine
+
+        self._device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._ml = MLBaselineEngine()
+        self._dl = DLAdvancedEngine(self._device)
+        self._ae = AEAnomalyEngine(self._device)
+
+    def predict_ml(self, sample: dict[str, Any]) -> tuple[str, float]:
+        return self._ml.predict(sample)
+
+    def preprocess_dl(self, sample: dict[str, Any]) -> np.ndarray:
+        import pandas as pd
+
+        return self._dl.preprocessor.transform(pd.DataFrame([sample]))[0]
+
+    def predict_window(self, window: np.ndarray) -> dict:
+        return self._dl.predict_from_tensor(self._to_tensor(window))
+
+    def score_ae(self, window: np.ndarray) -> tuple[float, bool]:
+        return self._ae.score(self._to_tensor(window))
+
+    def ml_transform(self, sample: dict[str, Any]) -> np.ndarray:
+        return self._ml._preprocess(sample)
+
+    @property
+    def ml_label_classes(self) -> list[str]:
+        return list(self._ml.label_encoder.classes_)
+
+    @property
+    def dl_feature_names(self) -> list[str]:
+        import json
+
+        from models.src.unified_predictor_worker import PREPROC_DIR
+
+        data = json.loads((PREPROC_DIR / "feature_list_unsw_v1_20260612.json").read_text())
+        return data if isinstance(data, list) else data["feature_columns"]
+
+    @property
+    def selected_ml_feature_names(self) -> list[str]:
+        from service.detection_api.src.models.schemas import CANONICAL_FEATURE_COLUMNS
+
+        support = self._ml.selector.get_support()
+        return [name for name, keep in zip(CANONICAL_FEATURE_COLUMNS, support, strict=True) if keep]
+
+    @property
+    def ml_models(self) -> tuple[Any, Any, Any]:
+        """(xgb, rf, lgbm) — for constructing a TreeEnsembleExplainer."""
+        return self._ml.xgb, self._ml.rf, self._ml.lgbm
+
+    @property
+    def stage1_model(self) -> Any:
+        """For constructing a DeepSequenceExplainer / LIME fallback over Stage 1's binary gate."""
+        return self._dl.stage1
+
+    @property
+    def ae_model(self) -> Any:
+        """For constructing a LIME explainer over the AE's anomaly_score()."""
+        return self._ae.model
+
+    def _to_tensor(self, window: np.ndarray):
+        import torch
+
+        return torch.tensor(window, dtype=torch.float32).unsqueeze(0).to(self._device)
+
+
 @dataclass(frozen=True)
 class DetectionConfig:
     explanation_budget_s: float = 8.0
@@ -69,6 +161,15 @@ class FlowWindowStore:
     other's temporal context) and has unbounded lifetime. The size/TTL
     bound is a security requirement: an unbounded dict keyed on
     attacker-supplied IPs is a memory-exhaustion vector.
+
+    Concurrency invariant: this class has no internal lock and must not
+    have one — it relies on always being called from the event-loop thread,
+    never from inside an anyio.to_thread.run_sync() call, with no `await`
+    between a push() and the paired window() in DetectionService.detect_flow
+    (asyncio coroutines only yield control at `await`, so that pairing is
+    atomic w.r.t. other coroutines on the same loop). The genuinely
+    CPU-expensive engine/explainer calls are offloaded to threads instead;
+    this store stays cheap, in-process, and single-threaded by design.
     """
 
     DEFAULT_SEQ_LEN = 10
@@ -164,19 +265,35 @@ class DetectionService:
         self._config = config or DetectionConfig()
         self._windows = window_store or FlowWindowStore()
 
-    async def detect_flow(self, flow: FlowInput, *, flow_key: str, explain: bool = True) -> PredictionResponse:
+    async def detect_flow(
+        self,
+        flow: FlowInput,
+        *,
+        flow_key: str,
+        explain: bool = True,
+        background_tasks: BackgroundTaskRunner | None = None,
+    ) -> PredictionResponse:
         from models.src.unified_predictor_worker import combined_verdict
 
         sample = flow.to_sample()
-        ml_pred, ml_conf = self._engines.predict_ml(sample)
+        # Engine calls are genuinely CPU-expensive (PyTorch/XGBoost/sklearn)
+        # once EngineBundle is a real UnifiedEngineBundle rather than a fast
+        # test fake — offloaded to a thread so one request's inference can't
+        # stall the event loop for every other concurrent caller.
+        ml_pred, ml_conf = await anyio.to_thread.run_sync(self._engines.predict_ml, sample)
 
-        dl_vector = self._engines.preprocess_dl(sample)
+        dl_vector = await anyio.to_thread.run_sync(self._engines.preprocess_dl, sample)
+        # FlowWindowStore itself always stays on this event-loop thread (never
+        # inside a to_thread.run_sync call) with no await between push() and
+        # window() — that's what keeps concurrent requests from interleaving
+        # on the same flow_key without needing a lock; see FlowWindowStore's
+        # docstring.
         self._windows.push(flow_key, dl_vector)
         window = self._windows.window(flow_key)
 
         if window is not None:
-            dl_result = self._engines.predict_window(window)
-            ae_score, zero_day = self._engines.score_ae(window)
+            dl_result = await anyio.to_thread.run_sync(self._engines.predict_window, window)
+            ae_score, zero_day = await anyio.to_thread.run_sync(self._engines.score_ae, window)
         else:
             dl_result = {"dl_prediction": "warming_up", "dl_confidence": 0.0, "dl_stage1_attack_prob": 0.0}
             ae_score, zero_day = None, False
@@ -196,19 +313,27 @@ class DetectionService:
 
         explanation: ExplanationResult | None = None
         if explain and self._explain_fn is not None:
-            explanation = safe_explain(
-                lambda: self._explain_fn(
-                    {
-                        "sample": sample,
-                        "prediction": prediction,
-                        "verdict_source": verdict["verdict_source"],
-                        "window": window,
-                    }
-                ),
-                label="detect_flow",
-                logger=_logger(),
-                budget_s=self._config.explanation_budget_s,
-            )
+            ctx = {
+                "sample": sample,
+                "prediction": prediction,
+                "verdict_source": verdict["verdict_source"],
+                "window": window,
+                "ml_prediction": ml_pred,
+                "zero_day_flag": zero_day,
+            }
+
+            def _run_explain() -> ExplanationResult:
+                return safe_explain(
+                    lambda: self._explain_fn(ctx),
+                    label="detect_flow",
+                    logger=_logger(),
+                    budget_s=self._config.explanation_budget_s,
+                )
+
+            # SHAP/LIME are the most CPU-expensive part of this method (up
+            # to the 5s/10s budgets in the Definition of Done) — offloaded
+            # for the same reason as the engine calls above.
+            explanation = await anyio.to_thread.run_sync(_run_explain)
 
         response = PredictionResponse(
             prediction=prediction,
@@ -221,11 +346,19 @@ class DetectionService:
         )
 
         if prediction != "BENIGN" or zero_day:
-            await self._persist_and_notify(flow, response)
+            alert = await self._persist(flow, response)
+            if background_tasks is not None:
+                # Matches the original design intent (Phase 4): SMTP/Slack
+                # latency must never ride on the /detect response. Callers
+                # that don't pass background_tasks (existing unit tests, or
+                # any non-HTTP caller) get the old inline-await behavior.
+                background_tasks.add_task(self._notify, alert)
+            else:
+                await self._notify(alert)
 
         return response
 
-    async def _persist_and_notify(self, flow: FlowInput, response: PredictionResponse) -> UUID:
+    async def _persist(self, flow: FlowInput, response: PredictionResponse) -> Alert:
         severity = derive_severity(response.prediction, response.confidence, response.zero_day_flag)
         alert_create = AlertCreate(
             flow_id=flow.flow_id or f"flow-{int(time.time() * 1000)}",
@@ -242,7 +375,7 @@ class DetectionService:
         )
 
         try:
-            alert = await self._repo.create(alert_create)
+            return await self._repo.create(alert_create)
         except Exception as exc:
             # Log the real cause server-side only — a repository exception
             # (e.g. a DB driver error) can embed connection strings, hosts,
@@ -252,32 +385,41 @@ class DetectionService:
             _logger().exception("failed to persist alert")
             raise DetectionUnavailableError("detection service temporarily unavailable") from exc
 
-        if _severity_rank(severity) >= _severity_rank(self._config.min_notify_severity):
-            top_features = (
-                tuple((f.feature, f.shap_value) for f in response.shap_explanation.top_features)
-                if response.shap_explanation
-                else ()
-            )
-            try:
-                await self._notifier.send(
-                    AlertNotification(
-                        alert_id=str(alert.id),
-                        flow_id=alert_create.flow_id,
-                        severity=severity,
-                        attack_type=response.prediction,
-                        confidence=response.confidence,
-                        src_ip=alert_create.src_ip,
-                        dst_ip=alert_create.dst_ip,
-                        detected_at=datetime.now(timezone.utc),
-                        top_features=top_features,
-                    )
-                )
-            except Exception:
-                # A notifier bug must not turn an already-persisted detection
-                # into a 500 for the caller — the alert is saved either way.
-                _logger().exception("notification failed after successful persist")
+    async def _notify(self, alert: Alert) -> None:
+        if _severity_rank(alert.severity) < _severity_rank(self._config.min_notify_severity):
+            return
 
-        return alert.id
+        # top_features' construction is inside this try too: when notify()
+        # runs as a FastAPI background task (see detect_flow), anything
+        # outside this block would raise past Starlette's background-task
+        # runner and be logged by the ASGI server's default handler instead
+        # of this file's sanitized logger — keep every _notify failure mode
+        # on the same logging path regardless of how it's invoked.
+        try:
+            top_features = ()
+            if alert.shap_explanation:
+                top_features = tuple(
+                    (f["feature"], f["shap_value"]) for f in alert.shap_explanation.get("top_features", [])
+                )
+            await self._notifier.send(
+                AlertNotification(
+                    alert_id=str(alert.id),
+                    flow_id=alert.flow_id,
+                    severity=alert.severity,
+                    attack_type=alert.attack_type,
+                    confidence=alert.confidence,
+                    src_ip=alert.src_ip,
+                    dst_ip=alert.dst_ip,
+                    detected_at=datetime.now(timezone.utc),
+                    top_features=top_features,
+                )
+            )
+        except Exception:
+            # A notifier bug must not turn an already-persisted detection
+            # into a 500 for the caller (or a swallowed background-task
+            # exception into an unhandled crash) — the alert is saved either
+            # way.
+            _logger().exception("notification failed after successful persist")
 
 
 def _logger():

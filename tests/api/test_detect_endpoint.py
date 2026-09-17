@@ -27,9 +27,11 @@ class FakeDetectionService:
         )
         self._raise_error = raise_error
         self.received_flow_keys: list[str] = []
+        self.received_background_tasks: list[object] = []
 
-    async def detect_flow(self, flow, *, flow_key, explain=True):
+    async def detect_flow(self, flow, *, flow_key, explain=True, background_tasks=None):
         self.received_flow_keys.append(flow_key)
+        self.received_background_tasks.append(background_tasks)
         if self._raise_error is not None:
             raise self._raise_error
         return self._response
@@ -167,6 +169,23 @@ class TestFlowKeyDerivation:
         client = TestClient(_build_app(service))
         client.post("/api/v1/detect", json={"flows": [flow], "flow_key": "custom-key"})
         assert service.received_flow_keys == ["custom-key"]
+
+
+class TestBackgroundTasksWiring:
+    def test_route_passes_a_background_tasks_instance_to_the_service(self, benign_flow: dict) -> None:
+        # Regression: notifications must be dispatched via FastAPI's
+        # BackgroundTasks (see detection.py's _notify/detect_flow), not
+        # awaited inline on the response path -- the route must actually
+        # forward a BackgroundTasks object, not None, to the service.
+        from starlette.background import BackgroundTasks
+
+        flow = _valid_flow(benign_flow)
+        service = FakeDetectionService()
+        client = TestClient(_build_app(service))
+        response = client.post("/api/v1/detect", json={"flows": [flow]})
+        assert response.status_code == 200
+        assert len(service.received_background_tasks) == 1
+        assert isinstance(service.received_background_tasks[0], BackgroundTasks)
 
 
 class TestFindingZeroRegressionGuard:

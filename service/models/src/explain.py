@@ -432,3 +432,94 @@ class LimeSequenceExplainer:
             method=ExplanationMethod.LIME,
             elapsed_ms=elapsed_ms,
         )
+
+
+class ExplanationService:
+    """Dispatches to the right explainer for whichever engine drove the verdict.
+
+    Routing (per DEV1_PROGRESS.md Phase 7/8): "ml" and "both" verdict sources
+    use the tree ensemble (cheap and exact — "both" doesn't get the deep
+    explainer just because DL agreed); "dl" uses the deep explainer, falling
+    back to LIME only if GradientExplainer itself raises; a cold DL window
+    (no window at all) always uses tree, since combined_verdict can only
+    report "ml" while DL is warming up anyway; a benign verdict with
+    zero_day_flag set explains the AE's own anomaly score via LIME instead,
+    since the tree/deep explainers would otherwise explain a "Normal"
+    verdict that the AE canary is specifically contradicting.
+
+    Callers (DetectionService) already wrap explain_fn in safe_explain, so
+    this class only needs to handle its own internal deep->LIME fallback —
+    any other exception (e.g. the tree explainer or ml_transform failing)
+    is left to propagate to that outer safety net.
+    """
+
+    def __init__(
+        self,
+        *,
+        tree_explainer: TreeEnsembleExplainer,
+        ml_transform: Callable[[Mapping[str, Any]], np.ndarray],
+        ml_label_classes: Sequence[str],
+        deep_explainer: "DeepSequenceExplainer | None" = None,
+        lime_dl_factory: Callable[[np.ndarray], "LimeSequenceExplainer"] | None = None,
+        ae_lime_factory: Callable[[np.ndarray], "LimeSequenceExplainer"] | None = None,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self._tree_explainer = tree_explainer
+        self._ml_transform = ml_transform
+        self._ml_label_classes = list(ml_label_classes)
+        self._deep_explainer = deep_explainer
+        # LIME perturbs only the last timestep with the rest of the window
+        # frozen via a closure baked in at construction (see
+        # LimeSequenceExplainer's docstring), so — unlike tree_explainer and
+        # deep_explainer, which take the window/row as a plain .explain()
+        # argument — a LIME explainer can't be a long-lived shared instance
+        # across different windows. Callers supply a factory that builds a
+        # fresh explainer scoped to the specific window being explained.
+        self._lime_dl_factory = lime_dl_factory
+        self._ae_lime_factory = ae_lime_factory
+        self._logger = logger or logging.getLogger(__name__)
+
+    def explain(self, ctx: Mapping[str, Any]) -> ExplanationResult:
+        sample = ctx["sample"]
+        prediction = ctx["prediction"]
+        verdict_source = ctx["verdict_source"]
+        window = ctx.get("window")
+        ml_prediction = ctx["ml_prediction"]
+        zero_day_flag = bool(ctx.get("zero_day_flag", False))
+        predicted_is_attack = prediction != "BENIGN"
+
+        if prediction == "BENIGN" and zero_day_flag and window is not None and self._ae_lime_factory is not None:
+            explainer = self._ae_lime_factory(window)
+            return explainer.explain(last_step=window[-1], raw_sample=sample)
+
+        if window is not None and verdict_source == "dl" and self._deep_explainer is not None:
+            try:
+                return self._deep_explainer.explain(
+                    window=_to_dl_tensor(window),
+                    class_index=1,
+                    raw_sample=sample,
+                    predicted_is_attack=predicted_is_attack,
+                )
+            except Exception:
+                self._logger.warning("GradientExplainer failed, falling back to LIME", exc_info=True)
+                if self._lime_dl_factory is None:
+                    raise
+                explainer = self._lime_dl_factory(window)
+                return explainer.explain(last_step=window[-1], raw_sample=sample)
+
+        class_index = (
+            self._ml_label_classes.index(ml_prediction) if ml_prediction in self._ml_label_classes else 0
+        )
+        transformed_row = self._ml_transform(sample)
+        return self._tree_explainer.explain(
+            transformed_row=transformed_row,
+            raw_sample=sample,
+            class_index=class_index,
+            predicted_is_attack=predicted_is_attack,
+        )
+
+
+def _to_dl_tensor(window: np.ndarray):
+    import torch
+
+    return torch.tensor(window, dtype=torch.float32).unsqueeze(0)

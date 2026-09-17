@@ -134,9 +134,23 @@ class TestDeepSequenceExplainer:
         # expected error, not a bug; tightened once nsamples was fixed to
         # actually control this in explain.py (was a genuine bug: comparing
         # against predict_proba() instead of raw logits, ~1.0-1.4 error).
+        # GradientExplainer's Monte Carlo sampling draws on numpy's global
+        # RNG as well as torch's, so both must be seeded -- seeding only
+        # torch left this test order-dependent (passed alone, failed after
+        # another test consumed numpy's global random state first). Even
+        # fully seeded, the production nsamples=100 default has enough
+        # residual variance across different (but individually valid) seeds
+        # to occasionally exceed abs=0.5 (observed range ~0.1-0.66 across
+        # seeds 0-5) -- nsamples=200 tightens that to ~0.001-0.43, verified
+        # empirically, without changing the production default (100 is
+        # chosen there for latency, not accuracy; this test only needs a
+        # reliable, non-flaky correctness check).
         torch.manual_seed(0)
+        np.random.seed(0)
         background, window, raw_sample = real_windows
-        explainer = DeepSequenceExplainer(model=stage1_model, feature_names=dl_feature_names, background=background)
+        explainer = DeepSequenceExplainer(
+            model=stage1_model, feature_names=dl_feature_names, background=background, nsamples=200
+        )
         result = explainer.explain(window=window, class_index=1, raw_sample=raw_sample, predicted_is_attack=True)
 
         if result.method == ExplanationMethod.SHAP_DEEP:
